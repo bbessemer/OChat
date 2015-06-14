@@ -57,11 +57,11 @@ oChat_init = (serverUri, token) ->
     # Geolocation is complicated because (a) not all browsers support it and
     # (b) the user can refuse permission.
     location = new Object;
-    waitingForLoc = true;
+    waitingForLoc = false;
     if navigator.geolocation
       # The usual way of handling asynchronous things synchronously. It's kind
       # of messy, but it seems to be the only way.
-      waitingForLoc = false;
+      waitingForLoc = true;
       navigator.geolocation.getCurrentPosition (p) ->
         location.lat = p.coords.latitude;
         location.lng = p.coords.longitude;
@@ -73,9 +73,7 @@ oChat_init = (serverUri, token) ->
       # the chat client that we are no longer waiting on the user's location,
       # because we tried to get it and failed.
       -> waitingForLoc = false;
-    else
-      location = null;
-      waitingForLoc = false;
+    else location = null;
     while waitingForLoc continue;
 
     # Create an object containing the message's text, timestamp, and other
