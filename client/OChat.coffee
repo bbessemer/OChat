@@ -22,11 +22,88 @@
 # 3. This notice may not be removed or altered from any source distribution.
 ###
 
-OChat = 
-	username: "",
-	server: "",
-	board: "",
-	signingKey: null,
-	verificationKeys: null,
-	
-	
+# This is here just to help us remember what goes into the OChat object.
+# It also happens to match what the server will return to an unauthorised user.
+OChat =
+  authorized: false
+  username: ""
+  server: ""
+  board: ""
+  lastMessageId: 0
+  messageLog: []
+  signingKey: null
+  verificationKeys: []
+
+oChat_init = (serverUri, token) ->
+
+  # When the client loads the page, the server has no idea who he/she is, so the
+  # client must send an authentication token to the server. If authorised (e.g.,
+  # s/he is in the group), the server will respond with a JSON file containing
+  # his/her username and the verification keys for everyone else in the group.
+  # Transmitting the user's signing key over the network should be done as
+  # little as possible, so it is stored in a cookie and only requested from the
+  # server if lost.
+  xhr = new XMLHttpRequest;
+  xhr.open "GET", serverUri + "?get=recent&token=" + token, true;
+  xhr.onreadystatechange = =>
+    OChat = JSON.parse @responseText if @readystate is 4 and @status is 200;
+  xhr.send();
+
+  # TODO: check for the signing key and retrieve if missing.
+
+  OChat.send = (message) ->
+    time = new Date;
+
+    # Geolocation is complicated because (a) not all browsers support it and
+    # (b) the user can refuse permission.
+    location = new Object;
+    waitingForLoc = true;
+    if navigator.geolocation
+      # The usual way of handling asynchronous things synchronously. It's kind
+      # of messy, but it seems to be the only way.
+      waitingForLoc = false;
+      navigator.geolocation.getCurrentPosition (p) ->
+        location.lat = p.coords.latitude;
+        location.lng = p.coords.longitude;
+        waitingForLoc = false;
+
+      # CoffeeScript's syntax makes this confusing, but the following line is
+      # the second parameter to getCurrentPosition(), which is supposed to be an
+      # error-handling function. The only purpose of this function is to tell
+      # the chat client that we are no longer waiting on the user's location,
+      # because we tried to get it and failed.
+      -> waitingForLoc = false;
+    else
+      location = null;
+      waitingForLoc = false;
+    while waitingForLoc continue;
+
+    # Create an object containing the message's text, timestamp, and other
+    # metadata.
+    message_obj =
+      timestamp: time.getTime()
+      # The multiplication by -60 is done for compatibility with the Google Maps
+      # Time Zone API.
+      timezone: -60*time.getTimezoneOffset()
+      sentFrom: location
+      text: message
+      sent: false
+
+    xhr = new XMLHttpRequest;
+    xhr.open "POST", server + board, true;
+
+    # The server will return code 200 when the message is posted.
+    # The responseText is irrelevant, preferably servers should return none.
+    xhr.onreadystatechange = =>
+      if @readystate is 4 and @status is 200 then message_obj.sent = true;
+
+    xhr.send JSON.stringify
+      username: @username
+      cyphertext: hex2b64 @signingKey.encrypt hexify JSON.stringify message_obj
+
+    # Add it to the message log
+    messageLog.push(message_obj);
+
+    # ...and we're done. To stop CoffeeScript from doing something weird, we...
+    return;
+  # END OChat.send()
