@@ -1,5 +1,5 @@
-var b64map="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-var b64padchar="=";
+var b64map="0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$%";
+var b64padchar="-";
 
 function hex2b64(h) {
   var i;
