@@ -21,14 +21,68 @@
 # 3. This notice may not be removed or altered from any source distribution.
 ###
 
+# Utility functions.
+
+# Encodes a single byte as zero-padded hex.
+byte2hex = (byte) ->
+  if byte < 0x10 then '0' + byte.toString(16) else byte.toString(16);
+
+# Encodes a string as hex using UTF-8
+hexify = (string) ->
+  hexString = "";
+  i = 0;
+  while i < string.length
+    cpt = string.codePointAt(i)
+    if cpt < 0x80 then hexString += byte2hex(cpt);
+    else if cpt < 0x800
+      hexString += byte2hex((cpt >> 6) | 0xb0) + byte2hex((cpt % (1<<6)) | 0x80);
+    else if cpt < 0x10000
+      hexString += byte2hex (cpt >> 12) | 0xe0;
+      hexString += byte2hex ((cpt >> 6) % (1<<6)) | 0x80;
+      hexString += byte2hex (cpt % (1<<6)) | 0x80;
+    else if cpt < 0x200000
+      hexString += byte2hex (cpt >> 18) | 0xf0;
+      hexString += byte2hex ((cpt >> 12) % (1<<6)) | 0x80;
+      hexString += byte2hex ((cpt >> 6) % (1<<6)) | 0x80;
+      hexString += byte2hex (cpt % (1<<6)) | 0x80;
+    else hexString += 'ee8080';
+    i++;
+  return hexString;
+
+unhexify = (hexString) ->
+  string = "";
+  i = 0;
+  while i < hexString.length
+    byte = parseInt(hexString.substr(i, 2), 16);
+    string += String.fromCodePoint(
+      if byte < 0x80 then byte;
+      else if byte < 0xe0
+        byte2 = parseInt(hexString.substr(i+=2, 2), 16);
+        ((byte ^ 0xb0) << 6) + (byte2 ^ 0x80);
+      else if byte < 0xf0
+        byte2 = parseInt(hexString.substr(i+=2, 2), 16);
+        byte3 = parseInt(hexString.substr(i+=2, 2), 16);
+        ((byte ^ 0xe0) << 12) + ((byte2 ^ 0x80) << 6) + (byte3 ^ 0x80);
+      else if byte < 0xf8
+        byte2 = parseInt(hexString.substr(i+=2, 2), 16);
+        byte3 = parseInt(hexString.substr(i+=2, 2), 16);
+        byte4 = parseInt(hexString.substr(i+=2, 2), 16);
+        ((byte ^ 0xf0) << 18) + ((byte2 ^ 0x80) << 12) + ((byte3 ^ 0x80) << 6) + (byte4 ^ 0x80);
+      else 0xe000;
+    );
+    i += 2;
+  return string;
+
+
 class RSAKey
   p: null
   q: null
   n: null
   e: 0
   d: null
+  owner: ""
 
-  constructor: (seed, length, exponent) ->
+  constructor: (seed, length, exponent, owner) ->
     factor_size = length >> 1;
     @e = exponent;
     e_big = new BigInteger(exponent);
@@ -45,30 +99,42 @@ class RSAKey
         @n = @p.multiply @q;
         @d = e_big.modInverse(phi)
         break;
+    @owner = if owner? then owner else null;
 
-  getPublic: -> new RSAPublicKey(@n, @e);
-  getPrivate: -> new RSAPrivateKey(@n, @d);
+  getPublic: -> new RSAPublicKey(@n, @e, @owner);
+  getPrivate: -> new RSAPrivateKey(@n, @d, @owner);
 
 class RSAPublicKey
   n: null
   e: 0
+  owner: ""
 
   constructor: (n, e) ->
-    @n = if typeof(n) is 'string' new BigInteger(n, 16) else n;
-    @e = if typeof(e) is 'string' parseInt(e, 16) else e;
+    @n = if typeof(n) is 'string' then new BigInteger(n, 16) else n;
+    @e = if typeof(e) is 'string' then parseInt(e, 16) else e;
+    @owner = if owner? then owner else null;
 
   encrypt: (msg) ->
-    msg = if typeof(msg) is 'string' new BigInteger(msg, 16) else msg;
-    if msg? and @e? and @n? msg.modPow(@e, @n).toString(16) else null;
+    msg = if typeof(msg) is 'string' then new BigInteger(msg, 16) else msg;
+    if msg? and @e? and @n? then msg.modPow(@e, @n).toString(16) else null;
+
+  # For signature-type algorithms where things are decrypted with a public key.
+  decrypt: (msg) ->
+    encrypt msg;
 
 class RSAPrivateKey
   n: null
   d: null
+  owner: ""
 
-  constructor: (n, d) ->
-    @n = if typeof(n) is 'string' new BigInteger(n, 16) else n;
-    @d = if typeof(d) is 'string' new BigInteger(d, 16) else d;
+  constructor: (n, d, owner) ->
+    @n = if typeof(n) is 'string' then new BigInteger(n, 16) else n;
+    @d = if typeof(d) is 'string' then new BigInteger(d, 16) else d;
+    @owner = if owner? then owner else null;
 
   decrypt: (cypher) ->
-    cypher = if typeof(cypher) is 'string' new BigInteger(cypher, 16) else cypher
-    if cypher? and @d? and @n? cypher.modPow(@d, @n).toString(16) else null;
+    cypher = if typeof(cypher) is 'string' then new BigInteger(cypher, 16) else cypher
+    if cypher? and @d? and @n? then cypher.modPow(@d, @n).toString(16) else null;
+
+  sign: (msg) ->
+    @decrypt msg;

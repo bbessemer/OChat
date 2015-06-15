@@ -45,13 +45,13 @@ oChat_init = (serverUri, token) ->
   # little as possible, so it is stored in a cookie and only requested from the
   # server if lost.
   xhr = new XMLHttpRequest;
-  xhr.open "GET", serverUri + "?get=recent&token=" + token, true;
+  xhr.open "GET", serverUri + "?get=setup&token=" + token, true;
   xhr.onreadystatechange = ->
     OChat = JSON.parse @responseText if @readystate is 4 and @status is 200;
 
-    # Replace the string keys in the JSON with RSAPrivateKey objects.
+    # Replace the string keys in the JSON with RSAPublicKey objects.
     for key in OChat.verificationKeys
-      key = new RSAPrivateKey(b64tohex key.b64, key.owner);
+      key = new RSAPublicKey(b64tohex key.b64, 0x10001, key.owner);
     return;
   xhr.send();
 
@@ -87,6 +87,7 @@ oChat_init = (serverUri, token) ->
     # Create an object containing the message's text, timestamp, and other
     # metadata.
     message_obj =
+      sentBy: @username
       timestamp: time.getTime()
       # The multiplication by -60 is done for compatibility with the Google Maps
       # Time Zone API.
@@ -96,7 +97,7 @@ oChat_init = (serverUri, token) ->
       sent: false
 
     xhr = new XMLHttpRequest;
-    xhr.open "POST", server + board, true;
+    xhr.open "POST", @server + @board + '?token=' + @token, true;
 
     # The server will return code 200 when the message is posted.
     # The responseText is irrelevant, preferably servers should return none.
@@ -107,7 +108,7 @@ oChat_init = (serverUri, token) ->
     xhr.send JSON.stringify
       username: @username
       token: @token
-      cyphertext: hex2b64 @signingKey.encrypt hexify JSON.stringify message_obj
+      cyphertext: hex2b64 @signingKey.sign hexify JSON.stringify message_obj
     # ))))}));  -- That's what it would look like with parens.
 
     # Add it to the message log
