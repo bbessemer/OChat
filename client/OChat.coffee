@@ -27,6 +27,7 @@
 OChat =
   authorized: false
   username: ""
+  token: ""
   server: ""
   board: ""
   lastMessageId: 0
@@ -45,8 +46,13 @@ oChat_init = (serverUri, token) ->
   # server if lost.
   xhr = new XMLHttpRequest;
   xhr.open "GET", serverUri + "?get=recent&token=" + token, true;
-  xhr.onreadystatechange = =>
+  xhr.onreadystatechange = ->
     OChat = JSON.parse @responseText if @readystate is 4 and @status is 200;
+
+    # Replace the string keys in the JSON with RSAPrivateKey objects.
+    for key in OChat.verificationKeys
+      key = new RSAPrivateKey(b64tohex key.b64, key.owner);
+    return;
   xhr.send();
 
   # TODO: check for the signing key and retrieve if missing.
@@ -59,6 +65,7 @@ oChat_init = (serverUri, token) ->
     location = new Object;
     waitingForLoc = false;
     if navigator.geolocation
+
       # The usual way of handling asynchronous things synchronously. It's kind
       # of messy, but it seems to be the only way.
       waitingForLoc = true;
@@ -72,9 +79,10 @@ oChat_init = (serverUri, token) ->
       # error-handling function. The only purpose of this function is to tell
       # the chat client that we are no longer waiting on the user's location,
       # because we tried to get it and failed.
-      -> waitingForLoc = false;
+      , -> waitingForLoc = false;
     else location = null;
-    while waitingForLoc continue;
+    while waitingForLoc
+      continue;
 
     # Create an object containing the message's text, timestamp, and other
     # metadata.
@@ -92,12 +100,15 @@ oChat_init = (serverUri, token) ->
 
     # The server will return code 200 when the message is posted.
     # The responseText is irrelevant, preferably servers should return none.
-    xhr.onreadystatechange = =>
+    xhr.onreadystatechange = ->
       if @readystate is 4 and @status is 200 then message_obj.sent = true;
 
+    # The real magic happens in this sequence of six(!) nested function calls.
     xhr.send JSON.stringify
       username: @username
+      token: @token
       cyphertext: hex2b64 @signingKey.encrypt hexify JSON.stringify message_obj
+    # ))))}));  -- That's what it would look like with parens.
 
     # Add it to the message log
     messageLog.push(message_obj);
