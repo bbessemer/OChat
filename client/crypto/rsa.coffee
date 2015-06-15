@@ -45,7 +45,7 @@ hexify = (string) ->
       hexString += byte2hex ((cpt >> 12) % (1<<6)) | 0x80;
       hexString += byte2hex ((cpt >> 6) % (1<<6)) | 0x80;
       hexString += byte2hex (cpt % (1<<6)) | 0x80;
-    else hexString += 'ee8080';
+    else hexString += 'ee8080';   # Reserved area, displays a 'cannot display' character
     i++;
   return hexString;
 
@@ -68,7 +68,7 @@ unhexify = (hexString) ->
         byte3 = parseInt(hexString.substr(i+=2, 2), 16);
         byte4 = parseInt(hexString.substr(i+=2, 2), 16);
         ((byte ^ 0xf0) << 18) + ((byte2 ^ 0x80) << 12) + ((byte3 ^ 0x80) << 6) + (byte4 ^ 0x80);
-      else 0xe000;
+      else 0xe000;  # Same as the 0xEE8080 above
     );
     i += 2;
   return string;
@@ -118,7 +118,7 @@ class RSAPublicKey
     msg = if typeof(msg) is 'string' then new BigInteger(msg, 16) else msg;
     if msg? and @e? and @n? then msg.modPow(@e, @n).toString(16) else null;
 
-  # For signature-type algorithms where things are decrypted with a public key.
+  # For signature-type cases where things are decrypted with a public key.
   decrypt: (msg) ->
     encrypt msg;
 
