@@ -24,44 +24,26 @@
 
 # This is here just to help us remember what goes into the OChat object.
 # It also happens to match what the server will return to an unauthorised user.
-OChat =
-  authorized: false
-  username: ""
-  token: ""
-  server: ""
-  board: ""
-  lastMessageId: 0
-  messageLog: []
-  signingKey: null
-  privateKey: null
-  verificationKeys: []
 
-OChat_init = (serverUri, token) ->
+# static
+class OChat
 
-  # When the client loads the page, the server has no idea who he/she is, so the
-  # client must send an authentication token to the server. If authorised (e.g.,
-  # s/he is in the group), the server will respond with a JSON file containing
-  # his/her username and the verification keys for everyone else in the group.
-  # Transmitting the user's signing key over the network should be done as
-  # little as possible, so it is stored in a cookie and only requested from the
-  # server if lost.
-  xhr = new XMLHttpRequest;
-  xhr.open "GET", '#{serverUri}?get=setup&token=#{token}', true;
-  xhr.onreadystatechange = ->
-    OChat = JSON.parse @responseText if @readystate is 4 and @status is 200;
-    # Replace the string keys in the JSON with RSAPublicKey objects.
-    for key in OChat.verificationKeys
-      key = new RSAPublicKey(b64tohex key.b64, 0x10001, key.owner);
-    return;
+  @authorized: false
+  @username: ""
+  @token: ""
+  @server: ""
+  @board: ""
+  @lastMessageId: 0
+  @messageLog: []
+  @signingKey: null
+  @privateKey: null
+  @verificationKeys: []
 
-  xhr.send();
 
-  # TODO: check for the signing key and retrieve if missing.
-
-  OChat.messagesReceivedHandlers = [];
-  OChat.addMessagesReceivedHandler = (func) ->
+  @messagesReceivedHandlers = [];
+  @addMessagesReceivedHandler = (func) ->
     @messagesReceivedHandlers.push(func) - 1;
-  OChat.removeMessagesReceivedHandler = (toRemove) ->
+  @removeMessagesReceivedHandler = (toRemove) ->
     if typeof(toRemove) is 'number'
       @messagesReceivedHandlers.splice(toRemove, 1);
     else
@@ -69,11 +51,11 @@ OChat_init = (serverUri, token) ->
       until i is -1
         @messagesReceivedHandlers.splice(i = @messagesReceivedHandlers.indexOf(toRemove), 1);
 
-  OChat.messagesReceived = (messages) ->
+  @messagesReceived = (messages) ->
     for handle in @messagesReceivedHandlers
       handle message if typeof(handle) is 'function';
 
-  OChat.refreshToken = ->
+  @refreshToken = ->
     if @privateKey? and @signingKey?
       xhr = new XMLHttpRequest;
       xhr.open 'GET', '#{@server}#{@board}?get=token&token=#{@token}', true
@@ -82,12 +64,12 @@ OChat_init = (serverUri, token) ->
           OChat.token = OChat.privateKey.decrypt @responseText
       xhr.send()
 
-  OChat.send = (message) ->
+  @send = (message) ->
     time = new Date;
 
     # Geolocation is complicated because (a) not all browsers support it and
     # (b) the user can refuse permission.
-    location = new Object;
+    _location = new Object;
     waitingForLoc = false;
     if navigator.geolocation
 
@@ -95,8 +77,8 @@ OChat_init = (serverUri, token) ->
       # of messy, but it seems to be the only way.
       waitingForLoc = true;
       navigator.geolocation.getCurrentPosition (p) ->
-        location.lat = p.coords.latitude;
-        location.lng = p.coords.longitude;
+        _location.lat = p.coords.latitude;
+        _location.lng = p.coords.longitude;
         waitingForLoc = false;
 
       # CoffeeScript's syntax makes this confusing, but the following line is
@@ -105,7 +87,7 @@ OChat_init = (serverUri, token) ->
       # the chat client that we are no longer waiting on the user's location,
       # because we tried to get it and failed.
       , -> waitingForLoc = false;
-    else location = null;
+    else _location = null;
     while waitingForLoc
       continue;
 
@@ -117,12 +99,12 @@ OChat_init = (serverUri, token) ->
       # The multiplication by -60 is done for compatibility with the Google Maps
       # Time Zone API.
       timezone: -60*time.getTimezoneOffset()
-      sentFrom: location
+      sentFrom: _location
       text: message
       sent: false
 
     xhr = new XMLHttpRequest;
-    xhr.open 'POST', '#{@server}#{@board}?token=#{token}', true;
+    xhr.open 'POST', '#{@server}#{@board}?token=#{@token}', true;
 
     # The server will return code 200 when the message is posted.
     # The server will return a new token, encrypted with the user's public key.
@@ -131,22 +113,44 @@ OChat_init = (serverUri, token) ->
         message_obj.sent = true;
         OChat.token = OChat.privateKey.decrypt @responseText;
 
-    # The real magic happens in this sequence of six(!) nested function calls.
+    cypher = @signingKey.sign hexify JSON.stringify message_obj
     xhr.send JSON.stringify
-      username: @username
-      cyphertext: hex2b64 @signingKey.sign hexify JSON.stringify message_obj
-    # ))))}));  -- That's what it would look like with parens.
+      u: @username
+      c:
+        if typeof cypher is 'string' then hex2b64 cypher;
+        else hex2b64 x for x in cypher;
 
     # Add it to the message log
-    messageLog.push(message_obj);
+    @messageLog.push(message_obj);
 
     # ...and we're done. To stop CoffeeScript from doing something weird, we...
     return;
   # END OChat.send()
 
-# END OChat_init
+  @check: ->
+    OChat.checking = true;
+    xhr = new XMLHttpRequest;
+    xhr.open 'GET', '#{@server}#{@board}?get=#{@lastMessageId}+new&token=#{@token}', true;
 
-if module? then module.exports = OChat;
-else
-  this.OChat = OChat;
-  this.OChat_init = OChat_init;
+    xhr.onreadystatechange = ->
+      if @readystate is 4 and @status is 200
+        raw = JSON.parse @responseText;
+        OChat.token = raw.token;
+        if raw.msgs?
+          OChat.messageLog.concat(
+            messages = for msg in raw.msgs
+              JSON.parse OChat.verificationKeys[msg.u].decrypt(
+                if typeof msg.c is 'string' then b64tohex msg.c;
+                else b64tohex x for x in msg.c
+              );
+          );
+          OChat.messagesReceived(messages);
+      OChat.checking = false;
+    # END xhr.onreadystatechange()
+
+    xhr.send()
+  # END OChat.check()
+
+# END static class OChat
+
+global.OChat = OChat;
