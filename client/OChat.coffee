@@ -33,9 +33,10 @@ OChat =
   lastMessageId: 0
   messageLog: []
   signingKey: null
+  privateKey: null
   verificationKeys: []
 
-oChat_init = (serverUri, token) ->
+OChat_init = (serverUri, token) ->
 
   # When the client loads the page, the server has no idea who he/she is, so the
   # client must send an authentication token to the server. If authorised (e.g.,
@@ -45,17 +46,41 @@ oChat_init = (serverUri, token) ->
   # little as possible, so it is stored in a cookie and only requested from the
   # server if lost.
   xhr = new XMLHttpRequest;
-  xhr.open "GET", serverUri + "?get=setup&token=" + token, true;
+  xhr.open "GET", '#{serverUri}?get=setup&token=#{token}', true;
   xhr.onreadystatechange = ->
     OChat = JSON.parse @responseText if @readystate is 4 and @status is 200;
-
     # Replace the string keys in the JSON with RSAPublicKey objects.
     for key in OChat.verificationKeys
       key = new RSAPublicKey(b64tohex key.b64, 0x10001, key.owner);
     return;
+
   xhr.send();
 
   # TODO: check for the signing key and retrieve if missing.
+
+  OChat.messagesReceivedHandlers = [];
+  OChat.addMessagesReceivedHandler = (func) ->
+    @messagesReceivedHandlers.push(func) - 1;
+  OChat.removeMessagesReceivedHandler = (toRemove) ->
+    if typeof(toRemove) is 'number'
+      @messagesReceivedHandlers.splice(toRemove, 1);
+    else
+      i = 0;
+      until i is -1
+        @messagesReceivedHandlers.splice(i = @messagesReceivedHandlers.indexOf(toRemove), 1);
+
+  OChat.messagesReceived = (messages) ->
+    for handle in @messagesReceivedHandlers
+      handle message if typeof(handle) is 'function';
+
+  OChat.refreshToken = ->
+    if @privateKey? and @signingKey?
+      xhr = new XMLHttpRequest;
+      xhr.open 'GET', '#{@server}#{@board}?get=token&token=#{@token}', true
+      xhr.onreadystatechange = ->
+        if OChat.privateKey? and OChat.signingKey? and @readystate is 4 and @status is 200
+          OChat.token = OChat.privateKey.decrypt @responseText
+      xhr.send()
 
   OChat.send = (message) ->
     time = new Date;
@@ -97,17 +122,18 @@ oChat_init = (serverUri, token) ->
       sent: false
 
     xhr = new XMLHttpRequest;
-    xhr.open "POST", @server + @board + '?token=' + @token, true;
+    xhr.open 'POST', '#{@server}#{@board}?token=#{token}', true;
 
     # The server will return code 200 when the message is posted.
-    # The responseText is irrelevant, preferably servers should return none.
+    # The server will return a new token, encrypted with the user's public key.
     xhr.onreadystatechange = ->
-      if @readystate is 4 and @status is 200 then message_obj.sent = true;
+      if @readystate is 4 and @status is 200
+        message_obj.sent = true;
+        OChat.token = OChat.privateKey.decrypt @responseText;
 
     # The real magic happens in this sequence of six(!) nested function calls.
     xhr.send JSON.stringify
       username: @username
-      token: @token
       cyphertext: hex2b64 @signingKey.sign hexify JSON.stringify message_obj
     # ))))}));  -- That's what it would look like with parens.
 
@@ -117,3 +143,10 @@ oChat_init = (serverUri, token) ->
     # ...and we're done. To stop CoffeeScript from doing something weird, we...
     return;
   # END OChat.send()
+
+# END OChat_init
+
+if module? then module.exports = OChat;
+else
+  this.OChat = OChat;
+  this.OChat_init = OChat_init;

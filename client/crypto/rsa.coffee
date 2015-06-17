@@ -73,6 +73,10 @@ unhexify = (hexString) ->
     i += 2;
   return string;
 
+  divideString = (str, chunkLength) ->
+    i = 0;
+    while i < str.length string.slice(i, i += chunkLength);
+
 
 class RSAKey
   p: null
@@ -109,18 +113,22 @@ class RSAPublicKey
   e: 0
   owner: ""
 
-  constructor: (n, e) ->
+  constructor: (n, e, owner) ->
     @n = if typeof(n) is 'string' then new BigInteger(n, 16) else n;
     @e = if typeof(e) is 'string' then parseInt(e, 16) else e;
     @owner = if owner? then owner else null;
 
   encrypt: (msg) ->
-    msg = if typeof(msg) is 'string' then new BigInteger(msg, 16) else msg;
-    if msg? and @e? and @n? then msg.modPow(@e, @n).toString(16) else null;
+    chunkLength = 0.75*@n.bitLength/8;
+    if msg.length <= chunkLength
+      msg = new BigInteger(msg, 16);
+      msg.modPow(@e, @n).toString(16);
+    else @encrypt chunk for chunk in divideString(msg);
 
   # For signature-type cases where things are decrypted with a public key.
   decrypt: (msg) ->
-    encrypt msg;
+    if typeof(msg) is 'string' then encrypt msg;
+    else (@encrypt chunk for chunk in msg).join();
 
 class RSAPrivateKey
   n: null
@@ -132,9 +140,29 @@ class RSAPrivateKey
     @d = if typeof(d) is 'string' then new BigInteger(d, 16) else d;
     @owner = if owner? then owner else null;
 
-  decrypt: (cypher) ->
-    cypher = if typeof(cypher) is 'string' then new BigInteger(cypher, 16) else cypher
-    if cypher? and @d? and @n? then cypher.modPow(@d, @n).toString(16) else null;
+  decrypt: (msg) ->
+    chunkLength = 0.75*@n.bitLength/8;
+    if msg.length <= chunkLength
+      msg = new BigInteger(msg, 16);
+      msg.modPow(@d, @n).toString(16);
+    else @decrypt chunk for chunk in divideString(msg);
 
   sign: (msg) ->
-    @decrypt msg;
+    if typeof(msg) is 'string' then encrypt msg;
+    else (@decrypt chunk for chunk in msg).join();
+
+if module?
+  module.exports =
+    RSAKey: RSAKey
+    RSAPublicKey: RSAPublicKey
+    RSAPrivateKey: RSAPrivateKey
+    byte2hex: byte2hex
+    hexify: hexify
+    unhexify: unhexify
+
+global.RSAKey = RSAKey
+global.RSAPublicKey = RSAPublicKey
+global.RSAPrivateKey = RSAPrivateKey
+global.byte2hex = byte2hex
+global.hexify = hexify
+global.unhexify = unhexify
