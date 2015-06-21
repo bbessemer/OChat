@@ -34,6 +34,8 @@ Import some modules.
     http = require 'http'
     url = require 'url'
     fs = require 'fs'
+    auth = require './auth.js'
+    MsgBoard = require './msgboard.js'
 
 Read the configuration.
 
@@ -110,34 +112,97 @@ Initialise the `reply` object.
           reply = new Object
 
 In `recent` mode, the server is allowed to define how many messages are considered
-'recent'. A negative argument to `MsgBoard::subscribe()` gets the *x* most
+'recent'. A single negative argument to `MsgBoard::subscribe()` gets the *x* most
 recent messages.
 
           if query.get is 'recent'
             reply.msgs = board.subscribe -1*conf.recent
 
 If not in recent mode, parse the `get` section of the query string to get the
-range of messages to return.
+range of messages to return, then actually get those messages. A single positive
+argument to `MsgBoard::subscribe()` gets messages from that message ID to the
+end of the log.
 
           else
             [from, to] = query.get.split '-'
             if to is 'now'
-              # A missing `to` argument will automatically get messages to the end
-              # of the log.
               reply.msgs = board.subscribe parseInt from
             else
               reply.msgs = board.subscribe parseInt(from), parseInt(to)
+
+Generate a new token for the user.
+
+          reply.token = auth.newToken username
+
+Write the server response.
+
+          replyString = JSON.stringify reply
+          res.writeHead 200,
+            'Content-Type': 'application/json'
+            'Content-Length': replyString.length
+          res.write replyString
 
 `POST` means to publish messages to the server.
 
         else if req.method is 'POST'
 
-# Final Stuff
+Data is sent as a stream, so we need to asynchronously concatenate it.
+
+          body = ''
+          req.on 'data', ->
+            body += data
+
+If someone's trying to upload more than 100 kB of messages, they're most likely
+a DDoSer. Kill their connection.
+
+            req.connection.destroy() if body.length > 1e5
+
+When all the data is uploaded, parse it and post it to the message board.
+
+          req.on 'end', ->
+            board.publish JSON.parse body
+
+Respond with a new token for the user, which will be 128 bits or 128/4 = 32
+digits of hexedecimal, encoded as text. The HTTP status 201 means 'created', i.e.,
+the message was posted.
+
+          res.writeHead 201,
+            'Content-Type': 'text/plain'
+            'Content-Length': 32
+          res.write auth.newToken username
+
+No other HTTP method besides `GET` or `POST` should be sent by a compliant OChat
+client. If we're getting anything else, like, say, `DELETE`, just return a 405
+(Method Not Allowed)
+
+        else res.writeHead 405, 'Method Not Allowed'
+
+This `else` statement goes all the way back to the authentication check at the
+beginning: if the token is invalid, return a 403 Forbidden. (A 401 Unauthorised
+requires a WWW-Authenticate header to be returned; since we don't use WWW-Authenticate,
+we don't use 401.) The response body will be the URL of the server's login page,
+which is in the configuration object.
+
+      else
+        res.writeHead 403, 'Access Denied',
+          'Content-Type': 'text/plain'
+          'Content-Length': conf.loginURL.length
+        res.write conf.loginURL
+
+No matter what we wrote to the response, it's now over. Void the last call to
+avoid CoffeeScript implicit return.
+
+      void res.end()
+
+## Final Stuff
 
 Tell the server to listen on the port defined in the configuration.
 
     .listen conf.port
 
-Export the configuration.
+Export the server object and the configuration.
 
+    module.exports = server
     global.conf = conf
+
+**THE END**
