@@ -5,5 +5,6 @@
  {
    "homedir": "/var/www/ochat",
    "port": "2203",
-   "prefix": "http://api.example.com/chat"
+   "prefix": "http://api.example.com/chat",
+   "loginURL": "http://example.com/login"
  }

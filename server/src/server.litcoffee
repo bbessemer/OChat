@@ -101,7 +101,11 @@ Don't do anything if the token is not valid. `auth()` will return the username
 if it is, and `null` if it isn't. (The equals sign is *not* an equality check.
 I'm just saving typing by doing the assignment in the `if` statement.)
 
+Always log everything to the console.
+
       if username = auth query.token
+        console.log '[' + new Date().toISOString() + '] User ' + username +
+        ' authenticated with token \'' + query.token + "'"
 
 `GET` indicates to retrieve messages from the server.
 
@@ -129,6 +133,11 @@ end of the log.
               reply.msgs = board.subscribe parseInt from
             else
               reply.msgs = board.subscribe parseInt(from), parseInt(to)
+
+Log it to the console.
+
+          console.log '[' + new Date().toISOString() + '] User ' + username +
+          ' got ' + reply.msgs.length + ' message(s) from ' + board.id
 
 Generate a new token for the user.
 
@@ -160,10 +169,16 @@ a DDoSer. Kill their connection.
 When all the data is uploaded, parse it and post it to the message board.
 
           req.on 'end', ->
-            board.publish JSON.parse body
+            msgs = JSON.parse body
+            board.publish msgs
+
+Log it to the console.
+
+            console.log '[' + new Date().toISOString() + '] User ' + username +
+            ' posted ' + msgs.length + ' message(s) to ' + board.id
 
 Respond with a new token for the user, which will be 128 bits or 128/4 = 32
-digits of hexedecimal, encoded as text. The HTTP status 201 means 'created', i.e.,
+digits of hexadecimal, encoded as text. The HTTP status 201 means 'created', i.e.,
 the message was posted.
 
           res.writeHead 201,
