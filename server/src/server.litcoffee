@@ -149,7 +149,7 @@ Write the server response.
 Data is sent as a stream, so we need to asynchronously concatenate it.
 
           body = ''
-          req.on 'data', ->
+          req.on 'data', (data) ->
             body += data
 
 If someone's trying to upload more than 100 kB of messages, they're most likely
@@ -173,7 +173,7 @@ the message was posted.
 
 No other HTTP method besides `GET` or `POST` should be sent by a compliant OChat
 client. If we're getting anything else, like, say, `DELETE`, just return a 405
-(Method Not Allowed)
+(Method Not Allowed).
 
         else res.writeHead 405, 'Method Not Allowed'
 
